@@ -26,6 +26,7 @@
   JOIN_FLOOD_LIMIT?: string;
   JOIN_FLOOD_WINDOW_MINUTES?: string;
   SCAN_COOLDOWN_MINUTES?: string;
+  SCAM_TEXT_THRESHOLD?: string;
   RESCAN_HOURS?: string;
   RESCAN_LIMIT?: string;
   LOG_LEVEL?: string;

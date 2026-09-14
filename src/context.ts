@@ -55,6 +55,12 @@ export function scanCooldownSeconds(env: Env): number {
   return Number.isFinite(m) && m > 0 ? Math.floor(m * 60) : 3 * 3600;
 }
 
+/** عدد كلمات القاموس المطلوب تطابقها في رسالة واحدة حتى تُعتبر احتيالاً. */
+export function scamTextThreshold(env: Env): number {
+  const n = Number(env.SCAM_TEXT_THRESHOLD);
+  return Number.isFinite(n) && n > 0 ? n : 4;
+}
+
 /** في المسح الدوري: أعمار الفحص المتجاوزة لهذه المدة يُعاد فحصها. */
 export function rescanHours(env: Env): number {
   const h = Number(env.RESCAN_HOURS);

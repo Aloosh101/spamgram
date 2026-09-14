@@ -46,12 +46,14 @@ const REASON_TEXT: Record<FlagReason, string> = {
   'no-photo': 'لا توجد صورة للبروفايل',
   'username-contains-user': 'الاسم المستخدم يحتوي على كلمة "user"',
   'name-looks-spammy': 'الاسم يبدو تلقائياً أو مريباً',
+  'content-spam': 'أرسل رسالة تحتوي كلمات احتيال محتملة',
 };
 
-function approvalText(user: TelegramUser, reasons: FlagReason[]): string {
-  const lines = reasons.map((r) => `▪️ ${REASON_TEXT[r]}`);
+function approvalText(user: TelegramUser, reasons: FlagReason[], matched?: string[]): string {
+  const lines = reasons.map((r) => `▪️ ${REASON_TEXT[r] ?? r}`);
+  if (matched?.length) lines.push(`▪️ الكلمات المشبوهة: ${matched.slice(0, 6).join('، ')}`);
   return (
-    `⚠️ عضو جديد يحتاج تحققاً: @${user.username ?? user.id} (${user.first_name})\n` +
+    `⚠️ حسابك يحتاج تحققاً: @${user.username ?? user.id} (${user.first_name})\n` +
     `الأسباب:\n${lines.join('\n')}\n\n` +
     'لإثبات أنك لست بريداً مزعجاً (سبام)، اضغط الزر ✅ خلال ساعتين، وإلا ستتم إزالتك من المجموعة.'
   );
@@ -72,6 +74,44 @@ export type EvaluationResult =
  * - من فُحص مؤخراً وكان سليماً → يتخطى (مع إعادة فحص دورية لاحقة).
  * - من يثبت أنه مريب وحديث → كتم + رسالة موافقة + تسجيل pending.
  */
+/**
+ * كتم + رسالة موافقة + تسجيل pending. يُستخدم عند ثبوت الريبة (فحص العضو أو فحص نص الرسالة).
+ * يرجع false إن فشل إرسال رسالة الموافقة (مع إبقاء الكتم).
+ */
+export async function flagAndAskApproval(
+  app: App,
+  chatId: number,
+  user: TelegramUser,
+  reasons: FlagReason[],
+  threadId?: number,
+  matched?: string[],
+  hasPhoto = true,
+): Promise<boolean> {
+  const { env, tg } = app;
+
+  await tg.restrictChatMember(chatId, user.id, MUTED_PERMISSIONS);
+
+  const deadline = now() + approveWindowSeconds(env);
+  let messageId: number;
+  try {
+    const sent = await tg.sendMessage(chatId, approvalText(user, reasons, matched), {
+      message_thread_id: threadId,
+      reply_markup: approveButtonMarkup(chatId, user.id),
+    });
+    messageId = sent.message_id;
+  } catch (err) {
+    console.error('[members] failed to send approval', { chatId, userId: user.id, err: String(err) });
+    await tg.restrictChatMember(chatId, user.id, MUTED_PERMISSIONS);
+    return false;
+  }
+
+  await addPending(env.DB, chatId, user.id, messageId, deadline);
+  await upsertScanned(env.DB, chatId, user.id, 'pending');
+  await upsertUser(env.DB, user.id, user.username ?? null, hasPhoto);
+  console.log('[members] flagged', { chatId, userId: user.id, reasons });
+  return true;
+}
+
 export async function evaluateMember(
   app: App,
   chatId: number,
@@ -122,27 +162,8 @@ export async function evaluateMember(
     return 'ok';
   }
 
-  await tg.restrictChatMember(chatId, user.id, MUTED_PERMISSIONS);
-
-  const deadline = now() + approveWindowSeconds(env);
-  let messageId: number;
-  try {
-    const sent = await tg.sendMessage(chatId, approvalText(member.user, assessment.reasons), {
-      message_thread_id: threadId,
-      reply_markup: approveButtonMarkup(chatId, user.id),
-    });
-    messageId = sent.message_id;
-  } catch (err) {
-    console.error('[members] failed to send approval', { chatId, userId: user.id, err: String(err) });
-    await tg.restrictChatMember(chatId, user.id, MUTED_PERMISSIONS);
-    return 'ok';
-  }
-
-  await addPending(env.DB, chatId, user.id, messageId, deadline);
-  await upsertScanned(env.DB, chatId, user.id, 'pending');
-  await upsertUser(env.DB, user.id, member.user.username ?? null, !assessment.reasons.includes('no-photo'));
-  console.log('[members] flagged', { chatId, userId: user.id, reasons: assessment.reasons });
-  return 'flagged';
+  const flagged = await flagAndAskApproval(app, chatId, member.user, assessment.reasons, threadId);
+  return flagged ? 'flagged' : 'ok';
 }
 
 /** عضو جديد انضم للتو: تُسجَّل عملية الانضمام ويُقيَّم. */

@@ -25,6 +25,7 @@ import { handleMyChatMember } from './onboarding';
 import { handleCommand } from './commands';
 import { handleCallback } from './approve';
 import { handleMembersUpdate, handleActivityMessage } from './members';
+import { handleContentMessage } from './scamscan';
 import { sweepExpired, sweepFull } from './sweep';
 
 async function safeEqual(a: string, b: string): Promise<boolean> {
@@ -70,8 +71,10 @@ async function processUpdate(env: Env, update: Update): Promise<void> {
     return;
   }
 
-  // أي عضو يتفاعل/يرسل في جروب مفعّل يُقيَّم ما لم يكن فحصه حديثاً (يشمل القدامى)
+  // أي عضو يتفاعل/يرسل في جروب مفعّل يُقيَّم ما لم يكن فحصه حديثاً (يشمل القدامى)،
+  // والرسائل النصية تُفحص ضد قاموس الكلمات المالية الاحتيالية (مع استثناء المدراء والموثوقين).
   if (msg?.from) {
+    if (msg.text) await handleContentMessage(app, chatId, msg);
     await handleActivityMessage(app, chatId, msg.from, msg.message_thread_id);
   }
 }

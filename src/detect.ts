@@ -25,7 +25,8 @@ export type FlagReason =
   | 'no-username'
   | 'no-photo'
   | 'username-contains-user'
-  | 'name-looks-spammy';
+  | 'name-looks-spammy'
+  | 'content-spam';
 
 export interface Assessment {
   reasons: FlagReason[];
