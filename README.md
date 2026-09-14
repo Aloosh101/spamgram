@@ -21,6 +21,13 @@ npm install
 npm run deploy
 ```
 
+ملاحظة للخصوصية: `account_id` غير محفوظ في `wrangler.jsonc`؛ حدده في أمر النشر:
+
+```bash
+CLOUDFLARE_ACCOUNT_ID=<account-id> npm run deploy
+# أو عبر متغير CLOUDFLARE_ACCOUNT_ID في بيئتك
+```
+
 ## الإعداد
 
 1. انسخ `.dev.vars.example` إلى `.dev.vars` وأضف:

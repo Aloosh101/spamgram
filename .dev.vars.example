@@ -2,3 +2,6 @@
 TELEGRAM_BOT_TOKEN=0000000000:AAAAxxxx
 WEBHOOK_SECRET=some-long-random-string
 WEBHOOK_URL=https://spamgram.<your-subdomain>.workers.dev/webhook
+
+# هل زر الرفع: معرّف حسابك على Cloudflare (لا يُحفظ في wrangler.jsonc للخصوصية)
+# CLOUDFLARE_ACCOUNT_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
