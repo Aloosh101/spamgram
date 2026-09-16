@@ -17,37 +17,32 @@
  * You should have received a copy of the GNU Affero General Public
  * License along with this program. If not, see
  * <https://www.gnu.org/licenses/>.
- */import { describe, it, expect } from 'vitest';
+ */
+import { describe, it, expect } from 'vitest';
 import { normalizeMessageWord, scanMessage } from '../src/scamtext';
 
-describe('normalizeMessageWord', () => {
-  it('removes tashkeel', () => {
+describe('normalizeMessageWord (arabic-stemmer)', () => {
+  it('removes tashkeel and alef-lam', () => {
     expect(normalizeMessageWord('اَلْبَيْعُ')).toBe('بيع');
   });
-  it('normalizes hamza variants to alef', () => {
-    expect(normalizeMessageWord('إيداع')).toBe('ايداع');
-    expect(normalizeMessageWord('أرباح')).toBe('ارباح');
+  it('normalizes hamza variants consistently', () => {
+    expect(normalizeMessageWord('إيداع')).toBe(normalizeMessageWord('ايداع'));
   });
-  it('removes ta marbuta', () => {
-    expect(normalizeMessageWord('لندن')).toBe('لندن');
+  it('maps prefixed and bare forms through the same analyzer', () => {
+    expect(normalizeMessageWord('اللندن')).toBe(normalizeMessageWord('لندن'));
+    expect(normalizeMessageWord('ولفترة')).toBe(normalizeMessageWord('فتره'));
   });
-  it('removes alef maqsura', () => {
-    expect(normalizeMessageWord('صني')).toBe('صني');
-  });
-  it('strips alef-lam prefix from short stems', () => {
-    expect(normalizeMessageWord('اللندن')).toBe('لندن');
-  });
-  it('does not strip prefix from English', () => {
+  it('passes English through lowercased', () => {
     expect(normalizeMessageWord('Bitcoin')).toBe('bitcoin');
   });
-  it('stemming removes waw lam prefix', () => {
-    expect(normalizeMessageWord('ولفترة')).toBe('فتره');
+  it('returns empty for empty input', () => {
+    expect(normalizeMessageWord('')).toBe('');
   });
 });
 
 describe('scanMessage', () => {
   it('flags when threshold reached', () => {
-    const text = 'استثمار تداول ارباح تويكن bitcoin usdt airdrop signal حسابك';
+    const text = 'استثمار تداول ارباح usdt airdrop';
     const r = scanMessage(text, 4);
     expect(r.flagged).toBe(true);
     expect(r.count).toBeGreaterThanOrEqual(4);
@@ -62,6 +57,11 @@ describe('scanMessage', () => {
     const r = scanMessage('استثمار usdt ارباح تداول airdrop برابط الان', 4);
     expect(r.flagged).toBe(true);
   });
+  it('matches prefixed variants against bare dictionary words', () => {
+    const r = scanMessage('والتداول الارباح بالرابط استثمر', 4);
+    expect(r.flagged).toBe(true);
+    expect(r.count).toBe(4);
+  });
   it('deduplicates same word occurrences', () => {
     const r = scanMessage('usdt usdt usdt usdt', 4);
     expect(r.count).toBe(1);
@@ -71,5 +71,13 @@ describe('scanMessage', () => {
     const r = scanMessage('ا ا ا ا', 4);
     expect(r.count).toBe(0);
     expect(r.flagged).toBe(false);
+  });
+  it('returns empty result for empty text', () => {
+    expect(scanMessage('', 4)).toEqual({ flagged: false, count: 0, matched: [] });
+  });
+  it('flags newly added dictionary words', () => {
+    const r = scanMessage('فرصة ذهبية استثمار عملات', 4);
+    expect(r.flagged).toBe(true);
+    expect(r.count).toBe(4);
   });
 });

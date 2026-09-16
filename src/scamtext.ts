@@ -17,44 +17,53 @@
  * You should have received a copy of the GNU Affero General Public
  * License along with this program. If not, see
  * <https://www.gnu.org/licenses/>.
- */import scamList from './scamwords.json';
-// لاحقا يجب استعمال محللات لغة عربية متخصصة ك: natural أو arabic-stemmer
-const PREFIXES = [
-  // 1. سوابق خماسية ورُباعية (يجب مطابقتها أولاً)
-  'فبال', 'فبالا', 'وبالا', 'فللا', 'وللا', 
-  'وبال', 'وفال', 'وكال', 'فبال', 'ولل', 'فلل',
+ */
+import scamList from './scamwords.json';
+import Stemmer from 'arabic-stemmer/src/Stemmer.js';
 
-  // 2. سوابق ثلاثية
-  'وال',  'بال',  'فال',  'كال',  'ستت',  'ستن',  'ستس',
+/**
+ * محلل لغوي عربي متخصص (arabic-stemmer): تجريد الكلمة من السوابق
+ * واللواحق والتشكيل ومعالجة صيغها المختلفة بدل قائمة السوابق اليدوية.
+ * يرجع stem()‎ إما النص نفسه (كلمات إيقافية/قصيرة) أو {stem, normalized}.
+ */
+const stemmer = new Stemmer();
 
-  // 3. سوابق ثنائية (بدون حروف منفردة)
-  'ال',   'لل',   'ول',   'فل',   'بل',   'ست',   'سن',   'سي',   'سا'
-];
+const ARABIC_RE = /^[\u0600-\u06FF]/;
 
-/** توحيد النص العربي: إزالة التشكيل وتوحيد الألف/الهمزة والتاء المربوطة والألف المقصورة. */
-function normalizeWord(raw: string): string {
+/** توحيد أولي قبل التجذيع (المكتبة تزيل التشكيل بنفسها). */
+function preNorm(raw: string): string {
   return raw
-    .replace(/[\u064B-\u0652\u0670]/g, '')
     .replace(/[أإآٱ]/g, 'ا')
     .replace(/ة/g, 'ه')
     .replace(/ى/g, 'ي')
     .toLowerCase();
 }
 
-/** كلمة واحدة تُؤخذ بلواصق التعريف/الواو/اللام الشائعة لتطابق أصل الكلمة. */
-function stemArabicWord(word: string): string {
-  for (const p of PREFIXES) {
-    if (word.startsWith(p) && word.length - p.length >= 2) return word.slice(p.length);
+/** كل المفاتيح المرشحة لكلمة: الصيغة المطبّعة + قائمة الجذور المحتملة. */
+function candidatesOf(word: string): string[] {
+  if (!ARABIC_RE.test(word)) return [word];
+  let out: string[];
+  try {
+    const r = stemmer.stem(word);
+    out = typeof r === 'string' ? [r] : [r.normalized, ...r.stem];
+  } catch {
+    out = [word];
   }
-  return word;
+  const seen = new Set<string>();
+  for (const k of out) {
+    const key = k.toLowerCase();
+    if (key.length >= 2) seen.add(key);
+  }
+  return [...seen];
 }
 
+/** الصيغة المعيارية الواحدة للكلمة (للعرض). */
 export function normalizeMessageWord(raw: string): string {
-  const w = normalizeWord(raw);
-  return /^[\u0600-\u06FF]/.test(w) ? stemArabicWord(w) : w;
+  const keys = candidatesOf(preNorm(raw));
+  return keys.length > 0 ? keys[0]! : '';
 }
 
-const DICT: ReadonlySet<string> = new Set(scamList.map((w) => normalizeMessageWord(w)));
+const DICT: ReadonlySet<string> = new Set(scamList.flatMap((w) => candidatesOf(preNorm(w))));
 
 export interface ScanResult {
   flagged: boolean;
@@ -62,19 +71,26 @@ export interface ScanResult {
   matched: string[];
 }
 
-/** يفحص رسالة ضد القاموس ويحوّل الكلمات المشتركة. العتبة الافتراضية: 4 كلمات. */
+/**
+ * يفحص رسالة ضد القاموس: الكلمة مشبوهة إن تقاطع أيّ من مرشحيها
+ * مع مفاتيح القاموس. العتبة الافتراضية: 4 كلمات مختلفة.
+ */
 export function scanMessage(text: string, threshold = 4): ScanResult {
   if (!text) return { flagged: false, count: 0, matched: [] };
 
-  const tokens = text
-    .replace(/[\p{P}\p{S}\p{N}]+/gu, ' ')
-    .split(/\s+/)
-    .map(normalizeMessageWord)
-    .filter((w) => w.length >= 2);
+  const raws = new Set(
+    text
+      .replace(/[\p{P}\p{S}\p{N}]+/gu, ' ')
+      .split(/\s+/)
+      .map(preNorm)
+      .filter((w) => w.length >= 2),
+  );
 
-  const unique = new Set(tokens);
   const matched: string[] = [];
-  for (const w of unique) if (DICT.has(w)) matched.push(w);
+  for (const raw of raws) {
+    const keys = candidatesOf(raw);
+    if (keys.some((k) => DICT.has(k))) matched.push(keys[0]!);
+  }
 
   return { flagged: matched.length >= threshold, count: matched.length, matched };
 }
